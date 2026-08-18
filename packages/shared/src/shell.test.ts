@@ -13,15 +13,19 @@ import {
   listLoginShellCandidates,
   mergePathEntries,
   mergePathValues,
+  parseWindowsRegistryPathValue,
   readEnvironmentFromLoginShell,
   readEnvironmentFromWindowsShell,
   readPathFromLaunchctl,
   readPathFromLoginShell,
+  readWindowsUserAndMachinePath,
   resolveCommandPath,
   resolveKnownWindowsCliDirs,
   resolveSpawnCommand,
   resolveWindowsEnvironment,
   SpawnExecutableResolution,
+  WindowsPersistentPath,
+  type WindowsPersistentPathReader,
   WindowsShellEnvironment,
   type WindowsShellEnvironmentReader,
 } from "./shell.ts";
@@ -30,10 +34,12 @@ const withWindowsEnvironmentMocks = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
   readEnvironment: WindowsShellEnvironmentReader,
   commandAvailable: CommandAvailabilityChecker,
+  readPersistentPath: WindowsPersistentPathReader = () => undefined,
 ) =>
   effect.pipe(
     Effect.provideService(WindowsShellEnvironment, readEnvironment),
     Effect.provideService(CommandAvailability, commandAvailable),
+    Effect.provideService(WindowsPersistentPath, readPersistentPath),
   );
 
 describe("extractPathFromShellOutput", () => {
@@ -320,6 +326,55 @@ describe("buildWindowsEnvironmentCaptureCommand", () => {
   });
 });
 
+describe("parseWindowsRegistryPathValue", () => {
+  it("reads REG_EXPAND_SZ Path values from reg.exe output", () => {
+    expect(
+      parseWindowsRegistryPathValue(
+        [
+          "HKEY_CURRENT_USER\\Environment",
+          "",
+          "    Path    REG_EXPAND_SZ    C:\\Users\\testuser\\AppData\\Local\\Microsoft\\WinGet\\Links;C:\\Users\\testuser\\AppData\\Local\\cursor-agent",
+          "",
+        ].join("\r\n"),
+      ),
+    ).toBe(
+      "C:\\Users\\testuser\\AppData\\Local\\Microsoft\\WinGet\\Links;C:\\Users\\testuser\\AppData\\Local\\cursor-agent",
+    );
+  });
+});
+
+describe("readWindowsUserAndMachinePath", () => {
+  it("merges User PATH ahead of Machine PATH from reg.exe", () => {
+    const execFile = vi.fn<
+      (
+        file: string,
+        args: ReadonlyArray<string>,
+        options: { encoding: "utf8"; timeout: number },
+      ) => string
+    >((_file, args) => {
+      const key = args[1] ?? "";
+      if (key.startsWith("HKCU\\")) {
+        return "    Path    REG_EXPAND_SZ    %LOCALAPPDATA%\\Microsoft\\WinGet\\Links;%LOCALAPPDATA%\\cursor-agent\n";
+      }
+      return "    Path    REG_SZ    C:\\Windows\\System32\n";
+    });
+
+    expect(
+      readWindowsUserAndMachinePath(
+        { LOCALAPPDATA: "C:\\Users\\testuser\\AppData\\Local", SystemRoot: "C:\\Windows" },
+        execFile,
+      ),
+    ).toBe(
+      [
+        "C:\\Users\\testuser\\AppData\\Local\\Microsoft\\WinGet\\Links",
+        "C:\\Users\\testuser\\AppData\\Local\\cursor-agent",
+        "C:\\Windows\\System32",
+      ].join(";"),
+    );
+    expect(execFile.mock.calls[0]?.[0]).toBe("C:\\Windows\\System32\\reg.exe");
+  });
+});
+
 describe("mergePathValues", () => {
   it("dedupes case-insensitively on Windows while preserving preferred order", () => {
     expect(
@@ -596,5 +651,48 @@ effectIt.layer(NodeServices.layer)("resolveWindowsEnvironment", (it) => {
       });
       expect(commandAvailable).toHaveBeenCalledTimes(1);
     }),
+  );
+
+  it.effect(
+    "merges persistent User PATH when the PowerShell probe only sees a stale process PATH",
+    () =>
+      Effect.gen(function* () {
+        const readEnvironment = vi.fn(
+          (_names: ReadonlyArray<string>, options?: { loadProfile?: boolean }) =>
+            options?.loadProfile ? {} : { PATH: "C:\\Windows\\System32" },
+        );
+        const commandAvailable = vi.fn(() => Effect.succeed(true));
+
+        expect(
+          yield* withWindowsEnvironmentMocks(
+            resolveWindowsEnvironment({
+              PATH: "C:\\Windows\\System32",
+              APPDATA: "C:\\Users\\testuser\\AppData\\Roaming",
+              LOCALAPPDATA: "C:\\Users\\testuser\\AppData\\Local",
+              USERPROFILE: "C:\\Users\\testuser",
+            }),
+            readEnvironment,
+            commandAvailable,
+            () =>
+              [
+                "C:\\Users\\testuser\\AppData\\Local\\Microsoft\\WinGet\\Links",
+                "C:\\Users\\testuser\\AppData\\Local\\cursor-agent",
+              ].join(";"),
+          ),
+        ).toEqual({
+          PATH: [
+            "C:\\Users\\testuser\\AppData\\Roaming\\npm",
+            "C:\\Users\\testuser\\AppData\\Local\\Programs\\nodejs",
+            "C:\\Users\\testuser\\AppData\\Local\\Volta\\bin",
+            "C:\\Users\\testuser\\AppData\\Local\\pnpm",
+            "C:\\Users\\testuser\\AppData\\Local\\cursor-agent",
+            "C:\\Users\\testuser\\.local\\bin",
+            "C:\\Users\\testuser\\.bun\\bin",
+            "C:\\Users\\testuser\\scoop\\shims",
+            "C:\\Users\\testuser\\AppData\\Local\\Microsoft\\WinGet\\Links",
+            "C:\\Windows\\System32",
+          ].join(";"),
+        });
+      }),
   );
 });

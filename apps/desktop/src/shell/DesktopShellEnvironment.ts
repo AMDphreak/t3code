@@ -11,6 +11,7 @@ import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawne
 import {
   buildWindowsEnvironmentCaptureCommand,
   resolveKnownWindowsCliDirs,
+  WindowsPersistentPath,
 } from "@t3tools/shared/shell";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
@@ -369,8 +370,10 @@ const installWindowsEnvironment = Effect.fn("desktop.shellEnvironment.installWin
       ],
       { concurrency: 2 },
     );
+    const readPersistentPath = yield* WindowsPersistentPath;
     const mergedPath = mergePaths("win32", [
       trimNonEmpty(profile.PATH),
+      trimNonEmpty(readPersistentPath(config.env)),
       trimNonEmpty(resolveKnownWindowsCliDirs(config.env).join(";")),
       trimNonEmpty(noProfile.PATH),
       readEnvPath(config.env),
