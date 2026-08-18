@@ -261,7 +261,22 @@ function buildEnvironmentCaptureCommand(names: ReadonlyArray<string>): string {
     .join("; ");
 }
 
-function buildWindowsEnvironmentCaptureCommand(names: ReadonlyArray<string>): string {
+function windowsEnvironmentValueAssignment(name: string): string {
+  // One-arg GetEnvironmentVariable reads the process env. GUI apps often
+  // inherit a stale User PATH, so merge Machine + User + Process for PATH.
+  if (name === "PATH") {
+    return [
+      "$machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')",
+      "$user = [Environment]::GetEnvironmentVariable('Path', 'User')",
+      "$process = [Environment]::GetEnvironmentVariable('Path', 'Process')",
+      "$value = (@($machine, $user, $process) | Where-Object { $_ -and $_.Length -gt 0 }) -join ';'",
+    ].join("; ");
+  }
+
+  return `$value = [Environment]::GetEnvironmentVariable('${name}')`;
+}
+
+export function buildWindowsEnvironmentCaptureCommand(names: ReadonlyArray<string>): string {
   return [
     "$ErrorActionPreference = 'Stop'",
     ...names.flatMap((name) => {
@@ -271,7 +286,7 @@ function buildWindowsEnvironmentCaptureCommand(names: ReadonlyArray<string>): st
 
       return [
         `Write-Output '${envCaptureStart(name)}'`,
-        `$value = [Environment]::GetEnvironmentVariable('${name}')`,
+        windowsEnvironmentValueAssignment(name),
         "if ($null -ne $value -and $value.Length -gt 0) { Write-Output $value }",
         `Write-Output '${envCaptureEnd(name)}'`,
       ];
@@ -680,8 +695,14 @@ export function resolveKnownWindowsCliDirs(env: NodeJS.ProcessEnv): ReadonlyArra
 
   return [
     ...(appData ? [`${appData}\\npm`] : []),
-    ...(localAppData ? [`${localAppData}\\Programs\\nodejs`, `${localAppData}\\Volta\\bin`] : []),
-    ...(localAppData ? [`${localAppData}\\pnpm`] : []),
+    ...(localAppData
+      ? [
+          `${localAppData}\\Programs\\nodejs`,
+          `${localAppData}\\Volta\\bin`,
+          `${localAppData}\\pnpm`,
+          `${localAppData}\\cursor-agent`,
+        ]
+      : []),
     ...(userProfile
       ? [`${userProfile}\\.local\\bin`, `${userProfile}\\.bun\\bin`, `${userProfile}\\scoop\\shims`]
       : []),

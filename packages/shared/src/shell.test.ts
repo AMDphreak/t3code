@@ -8,6 +8,7 @@ import {
   extractPathFromShellOutput,
   CommandAvailability,
   type CommandAvailabilityChecker,
+  buildWindowsEnvironmentCaptureCommand,
   isCommandAvailable,
   listLoginShellCandidates,
   mergePathEntries,
@@ -236,6 +237,10 @@ describe("readEnvironmentFromWindowsShell", () => {
       expect.arrayContaining(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command"]),
       { encoding: "utf8", timeout: 5000 },
     );
+    const command = execFile.mock.calls[0]?.[1]?.at(-1);
+    expect(command).toContain("GetEnvironmentVariable('Path', 'Machine')");
+    expect(command).toContain("GetEnvironmentVariable('Path', 'User')");
+    expect(command).toContain("GetEnvironmentVariable('Path', 'Process')");
   });
 
   it("strips CRLF delimiters from captured PowerShell values", () => {
@@ -253,6 +258,9 @@ describe("readEnvironmentFromWindowsShell", () => {
     expect(readEnvironmentFromWindowsShell(["FNM_DIR"], execFile)).toEqual({
       FNM_DIR: "C:\\Users\\testuser\\AppData\\Roaming\\fnm",
     });
+    const command = execFile.mock.calls[0]?.[1]?.at(-1);
+    expect(command).toContain("GetEnvironmentVariable('FNM_DIR')");
+    expect(command).not.toContain("GetEnvironmentVariable('Path', 'User')");
   });
 
   it("omits -NoProfile when loadProfile is enabled", () => {
@@ -303,6 +311,15 @@ describe("readEnvironmentFromWindowsShell", () => {
   });
 });
 
+describe("buildWindowsEnvironmentCaptureCommand", () => {
+  it("merges Machine, User, and Process PATH from the Windows registry", () => {
+    const command = buildWindowsEnvironmentCaptureCommand(["PATH"]);
+    expect(command).toContain("GetEnvironmentVariable('Path', 'Machine')");
+    expect(command).toContain("GetEnvironmentVariable('Path', 'User')");
+    expect(command).toContain("GetEnvironmentVariable('Path', 'Process')");
+  });
+});
+
 describe("mergePathValues", () => {
   it("dedupes case-insensitively on Windows while preserving preferred order", () => {
     expect(
@@ -336,6 +353,7 @@ describe("resolveKnownWindowsCliDirs", () => {
       "C:\\Users\\testuser\\AppData\\Local\\Programs\\nodejs",
       "C:\\Users\\testuser\\AppData\\Local\\Volta\\bin",
       "C:\\Users\\testuser\\AppData\\Local\\pnpm",
+      "C:\\Users\\testuser\\AppData\\Local\\cursor-agent",
       "C:\\Users\\testuser\\.local\\bin",
       "C:\\Users\\testuser\\.bun\\bin",
       "C:\\Users\\testuser\\scoop\\shims",
@@ -477,6 +495,7 @@ effectIt.layer(NodeServices.layer)("resolveWindowsEnvironment", (it) => {
           "C:\\Users\\testuser\\AppData\\Local\\Programs\\nodejs",
           "C:\\Users\\testuser\\AppData\\Local\\Volta\\bin",
           "C:\\Users\\testuser\\AppData\\Local\\pnpm",
+          "C:\\Users\\testuser\\AppData\\Local\\cursor-agent",
           "C:\\Users\\testuser\\.local\\bin",
           "C:\\Users\\testuser\\.bun\\bin",
           "C:\\Users\\testuser\\scoop\\shims",
@@ -526,6 +545,7 @@ effectIt.layer(NodeServices.layer)("resolveWindowsEnvironment", (it) => {
           "C:\\Users\\testuser\\AppData\\Local\\Programs\\nodejs",
           "C:\\Users\\testuser\\AppData\\Local\\Volta\\bin",
           "C:\\Users\\testuser\\AppData\\Local\\pnpm",
+          "C:\\Users\\testuser\\AppData\\Local\\cursor-agent",
           "C:\\Users\\testuser\\.local\\bin",
           "C:\\Users\\testuser\\.bun\\bin",
           "C:\\Users\\testuser\\scoop\\shims",
