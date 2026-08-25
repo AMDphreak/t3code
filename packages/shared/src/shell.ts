@@ -265,11 +265,13 @@ function windowsEnvironmentValueAssignment(name: string): string {
   // One-arg GetEnvironmentVariable reads the process env. GUI apps often
   // inherit a stale User PATH, so merge Machine + User + Process for PATH.
   if (name === "PATH") {
+    // Profile probes prepend toolchain dirs onto the process PATH (fnm, nvm, etc.).
+    // Keep Process first so those entries win over Machine/User registry PATH.
     return [
+      "$process = [Environment]::GetEnvironmentVariable('Path', 'Process')",
       "$machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')",
       "$user = [Environment]::GetEnvironmentVariable('Path', 'User')",
-      "$process = [Environment]::GetEnvironmentVariable('Path', 'Process')",
-      "$value = (@($machine, $user, $process) | Where-Object { $_ -and $_.Length -gt 0 }) -join ';'",
+      "$value = (@($process, $machine, $user) | Where-Object { $_ -and $_.Length -gt 0 }) -join ';'",
     ].join("; ");
   }
 

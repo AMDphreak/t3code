@@ -318,11 +318,13 @@ describe("readEnvironmentFromWindowsShell", () => {
 });
 
 describe("buildWindowsEnvironmentCaptureCommand", () => {
-  it("merges Machine, User, and Process PATH from the Windows registry", () => {
+  it("merges Process, Machine, and User PATH with profile prepends first", () => {
     const command = buildWindowsEnvironmentCaptureCommand(["PATH"]);
     expect(command).toContain("GetEnvironmentVariable('Path', 'Machine')");
     expect(command).toContain("GetEnvironmentVariable('Path', 'User')");
     expect(command).toContain("GetEnvironmentVariable('Path', 'Process')");
+    expect(command).toContain("@($process, $machine, $user)");
+    expect(command).not.toContain("@($machine, $user, $process)");
   });
 });
 
