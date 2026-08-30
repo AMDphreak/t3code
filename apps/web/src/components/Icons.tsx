@@ -663,6 +663,19 @@ export const OpenCodeIcon: Icon = (props) => (
   </svg>
 );
 
+/** DevCentr Hornet harness mark — simple stinger hex for the provider picker. */
+export const HornetIcon: Icon = (props) => (
+  <svg {...props} viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      d="M16 2L28 9.5V22.5L16 30L4 22.5V9.5L16 2Z"
+      className="stroke-current"
+      strokeWidth="2"
+      fill="none"
+    />
+    <path d="M16 10V22M11 14H21M11 18H21" className="stroke-current" strokeWidth="2" />
+  </svg>
+);
+
 export const GithubCopilotIcon: Icon = ({ className, ...props }) => (
   <svg
     {...props}
