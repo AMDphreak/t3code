@@ -1,5 +1,14 @@
 import { Debouncer } from "@tanstack/react-pacer";
 import { create } from "zustand";
+import {
+  EMPTY_CANVAS_LAYOUT,
+  noteCanvasTitle,
+  sanitizeCanvasLayout,
+  type ArchiveViewMode,
+  type CanvasFileNode,
+  type CanvasLayout,
+  type CanvasPromptEdge,
+} from "./components/canvas/canvasLayout";
 import { normalizeProjectPathForComparison } from "./lib/projectPaths";
 
 export const PERSISTED_STATE_KEY = "t3code:ui-state:v1";
@@ -27,6 +36,7 @@ export interface PersistedUiState {
   defaultAdvertisedEndpointKey?: string | null;
   threadChangedFilesExpansionVersion?: typeof THREAD_CHANGED_FILES_EXPANSION_VERSION;
   threadChangedFilesExpandedById?: Record<string, Record<string, boolean>>;
+  canvasLayout?: unknown;
 }
 
 export interface UiProjectState {
@@ -43,7 +53,11 @@ export interface UiEndpointState {
   defaultAdvertisedEndpointKey: string | null;
 }
 
-export interface UiState extends UiProjectState, UiThreadState, UiEndpointState {}
+export interface UiCanvasState {
+  canvasLayout: CanvasLayout;
+}
+
+export interface UiState extends UiProjectState, UiThreadState, UiEndpointState, UiCanvasState {}
 
 const initialState: UiState = {
   projectExpandedById: {},
@@ -51,6 +65,7 @@ const initialState: UiState = {
   threadLastVisitedAtById: {},
   threadChangedFilesExpandedById: {},
   defaultAdvertisedEndpointKey: null,
+  canvasLayout: EMPTY_CANVAS_LAYOUT,
 };
 
 const LEGACY_PROJECT_CWD_PREFERENCE_PREFIX = "legacy-project-cwd:";
@@ -135,6 +150,7 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
       parsed.defaultAdvertisedEndpointKey.length > 0
         ? parsed.defaultAdvertisedEndpointKey
         : null,
+    canvasLayout: sanitizeCanvasLayout(parsed.canvasLayout),
   };
 }
 
@@ -207,6 +223,7 @@ export function persistState(state: UiState): void {
         defaultAdvertisedEndpointKey: state.defaultAdvertisedEndpointKey,
         threadChangedFilesExpansionVersion: THREAD_CHANGED_FILES_EXPANSION_VERSION,
         threadChangedFilesExpandedById: state.threadChangedFilesExpandedById,
+        canvasLayout: state.canvasLayout,
       } satisfies PersistedUiState),
     );
     if (!legacyKeysCleanedUp) {
@@ -392,6 +409,36 @@ interface UiStateStore extends UiState {
     draggedProjectIds: readonly string[],
     targetProjectIds: readonly string[],
   ) => void;
+  moveCanvasCard: (threadKey: string, x: number, y: number, zIndex: number) => void;
+  completeCanvasCard: (threadKey: string, completedAt: string | null) => void;
+  noteCanvasCardTitle: (threadKey: string, title: string, changedAt: string, index: number) => void;
+  setCanvasArchiveView: (mode: ArchiveViewMode) => void;
+  setCanvasViewport: (x: number, y: number) => void;
+  addCanvasFile: (file: CanvasFileNode) => void;
+  moveCanvasFile: (fileId: string, x: number, y: number) => void;
+  linkCanvasFile: (edge: CanvasPromptEdge) => void;
+}
+
+function withCard(
+  state: UiState,
+  threadKey: string,
+  update: (card: CanvasLayout["cards"][string]) => CanvasLayout["cards"][string],
+): UiState {
+  const card = state.canvasLayout.cards[threadKey] ?? {
+    x: 24,
+    y: 24,
+    zIndex: 1,
+    userCompletedAt: null,
+    lastSeenTitle: null,
+    topics: [],
+  };
+  return {
+    ...state,
+    canvasLayout: {
+      ...state.canvasLayout,
+      cards: { ...state.canvasLayout.cards, [threadKey]: update(card) },
+    },
+  };
 }
 
 export const useUiStateStore = create<UiStateStore>((set) => ({
@@ -409,6 +456,54 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
   reorderProjects: (currentProjectOrder, draggedProjectIds, targetProjectIds) =>
     set((state) =>
       reorderProjects(state, currentProjectOrder, draggedProjectIds, targetProjectIds),
+    ),
+  moveCanvasCard: (threadKey, x, y, zIndex) =>
+    set((state) => withCard(state, threadKey, (card) => ({ ...card, x, y, zIndex }))),
+  completeCanvasCard: (threadKey, completedAt) =>
+    set((state) =>
+      withCard(state, threadKey, (card) => ({ ...card, userCompletedAt: completedAt })),
+    ),
+  noteCanvasCardTitle: (threadKey, title, changedAt, index) =>
+    set((state) => ({
+      ...state,
+      canvasLayout: noteCanvasTitle(state.canvasLayout, threadKey, title, changedAt, index),
+    })),
+  setCanvasArchiveView: (mode) =>
+    set((state) =>
+      state.canvasLayout.archiveViewMode === mode
+        ? state
+        : { ...state, canvasLayout: { ...state.canvasLayout, archiveViewMode: mode } },
+    ),
+  setCanvasViewport: (x, y) =>
+    set((state) => ({
+      ...state,
+      canvasLayout: { ...state.canvasLayout, viewport: { ...state.canvasLayout.viewport, x, y } },
+    })),
+  addCanvasFile: (file) =>
+    set((state) => ({
+      ...state,
+      canvasLayout: { ...state.canvasLayout, files: [...state.canvasLayout.files, file] },
+    })),
+  moveCanvasFile: (fileId, x, y) =>
+    set((state) => ({
+      ...state,
+      canvasLayout: {
+        ...state.canvasLayout,
+        files: state.canvasLayout.files.map((file) =>
+          file.id === fileId ? { ...file, x, y } : file,
+        ),
+      },
+    })),
+  linkCanvasFile: (edge) =>
+    set((state) =>
+      state.canvasLayout.edges.some(
+        (item) => item.fileId === edge.fileId && item.threadKey === edge.threadKey,
+      )
+        ? state
+        : {
+            ...state,
+            canvasLayout: { ...state.canvasLayout, edges: [...state.canvasLayout.edges, edge] },
+          },
     ),
 }));
 

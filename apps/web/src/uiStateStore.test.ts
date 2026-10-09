@@ -1,6 +1,7 @@
 import { ProjectId, ThreadId } from "@t3tools/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+import { EMPTY_CANVAS_LAYOUT } from "./components/canvas/canvasLayout";
 import {
   legacyProjectCwdPreferenceKey,
   markThreadUnread,
@@ -24,6 +25,7 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     threadLastVisitedAtById: {},
     threadChangedFilesExpandedById: {},
     defaultAdvertisedEndpointKey: null,
+    canvasLayout: EMPTY_CANVAS_LAYOUT,
     ...overrides,
   };
 }
@@ -183,6 +185,7 @@ describe("parsePersistedState", () => {
           "turn-2": true,
         },
       },
+      canvasLayout: EMPTY_CANVAS_LAYOUT,
     });
   });
 
@@ -303,6 +306,7 @@ describe("uiStateStore persistence", () => {
           "turn-2": true,
         },
       },
+      canvasLayout: EMPTY_CANVAS_LAYOUT,
     });
     expect(parsePersistedState(persisted)).toEqual({
       ...state,
